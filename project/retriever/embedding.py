@@ -7,7 +7,7 @@ import os
 
 # used to make large embeddings feasible by exporting some to disk
 class Embedding(Dataset):
-    def __init__(self, data_path, axis=0, chunk_size=1000):
+    def __init__(self, data_path, axis=0, chunk_size=-1):
         self.identifier = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
         self.batch_file_paths = []
         self.batch_idxs = []
@@ -30,7 +30,7 @@ class Embedding(Dataset):
         if self.tensor_chunk is None:
             self.tensor_chunk = batch_tensor
         else:
-            self.tensor_chunk = torch.cat((self.tensor_chunk, batch_tensor), sim=self.axis)
+            self.tensor_chunk = torch.cat((self.tensor_chunk, batch_tensor), dim=self.axis)
         if self.tensor_chunk.shape[self.axis] >= self.chunk_size:
             batch_tensor_path = self.data_path+f"batch_{len(self.batch_file_paths)}.pt"
             self.batch_file_paths.append(batch_tensor_path)

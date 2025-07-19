@@ -8,7 +8,7 @@ import math
 import itertools
 
 class Ranking_Benchmark:
-    def __init__(self, dataset_name, dir_name, prefix="", result_path="datasets/preprocessed/", max_samples=5000):
+    def __init__(self, dataset_name, dir_name, prefix="", result_path="datasets/preprocessed/", max_samples=10):
         dataset = load_dataset(dataset_name, dir_name)
         dataset = dataset["test"][:max_samples]
         self.bm25 = BM25()
