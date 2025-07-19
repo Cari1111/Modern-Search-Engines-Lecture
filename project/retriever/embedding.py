@@ -42,15 +42,24 @@ class Embedding(Dataset):
             self.shape = tuple([self.batch_idxs[-1]] + list(self.tensor_chunk.shape)[1:])
             self.tensor_chunk = None
         
-    def map_over(self, function, data_path=None, result_axis=0):
+    def map_over(self, function, data_path=None, result_axis=0, result_embed=False):
         if data_path is None:
             data_path = self.data_path
-        result_embedding = Embedding(data_path,result_axis)
+        if result_embed:
+            result_embedding = Embedding(data_path,result_axis)
+        else:
+            result_embedding = []
         for batch_file_path in self.batch_file_paths:
             batch_tensor = torch.load(batch_file_path)
             batch_result = function(batch_tensor)
-            result_embedding.add(batch_result)
-        result_embedding.save()
+            if result_embed:
+                result_embedding.add(batch_result)
+            else:
+                result_embedding.append(batch_result)
+        if result_embed:
+            result_embedding.save()
+        else:
+            result_embedding = torch.cat(result_embedding, dim=self.axis)
         return result_embedding
     
     def get_batch_tensor(self, idx):
