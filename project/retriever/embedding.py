@@ -3,14 +3,16 @@ from torch.utils.data import Dataset
 import json
 import string
 import random
+import os
 
 # used to make large embeddings feasible by exporting some to disk
 class Embedding(Dataset):
     def __init__(self, data_path, axis=0):
-        self.identifier = f"[{''.join(random.choices(string.ascii_letters + string.digits, k=5))}]"
+        self.identifier = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
         self.batch_file_paths = []
         self.batch_idxs = []
-        self.data_path = data_path
+        os.mkdir(data_path+self.identifier)
+        self.data_path = data_path+self.identifier+"/"
         self.last_loaded_batch = None
         self.last_loaded_batch_edges = (-1, -1)
         self.shape = None
@@ -23,13 +25,13 @@ class Embedding(Dataset):
         return torch.cat(tensors, dim=self.axis)
 
     def add(self, batch_tensor): # add new embedding batch at the END of the overall embedding list
-        batch_tensor_path = self.data_path+self.identifier+f"batch_{len(self.batch_file_paths)}.pt"
+        batch_tensor_path = self.data_path+f"batch_{len(self.batch_file_paths)}.pt"
         self.batch_file_paths.append(batch_tensor_path)
         torch.save(batch_tensor, batch_tensor_path)
         if len(self.batch_idxs) > 0:
             self.batch_idxs.append(self.batch_idxs[-1]+len(batch_tensor))
         else:
-            self.batch_idxs.append(len(batch_tensor))
+            self.batch_idxs.append(len(batch_tensor)-1)
         self.shape = tuple([self.batch_idxs[-1]] + list(batch_tensor.shape)[1:])
         
     def map_over(self, function, data_path=None, result_axis=0):
@@ -40,6 +42,7 @@ class Embedding(Dataset):
             batch_tensor = torch.load(batch_file_path)
             batch_result = function(batch_tensor)
             result_embedding.add(batch_result)
+        result_embedding.save()
         return result_embedding
     
     def get_batch_tensor(self, idx):
@@ -52,11 +55,11 @@ class Embedding(Dataset):
             return 0
     
     def __getitem__(self, idx):
-        if idx <= self.last_loaded_batch_edges[0] or idx > self.last_loaded_batch_edges[1]:
+        if idx < self.last_loaded_batch_edges[0] or idx > self.last_loaded_batch_edges[1]:
             file_idx = 0
             file_start_offset = 0
             while idx > self.batch_idxs[file_idx]:
-                file_start_offset = self.batch_idxs[file_idx]
+                file_start_offset = self.batch_idxs[file_idx]+1
                 file_idx += 1
                 if file_idx >= len(self.batch_idxs):
                     raise IndexError()

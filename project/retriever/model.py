@@ -10,6 +10,7 @@ import numpy as np
 import re
 from embedding import Embedding
 from functools import partial
+import gc
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -109,7 +110,7 @@ class ColSentenceModel(nn.Module):
     def resolve(self, query_embeddings, document_embeddings):
         return self.max_sim(document_embeddings, query_embeddings, sentence_wise=False)
 
-    def embed(self, text, query=True, batch_size=500): # sentences structure: (batch x text) embeddings
+    def embed(self, text, query=True, batch_size=50): # sentences structure: (batch x text) embeddings
         embedding_obj = Embedding(self.data_path)
         start_idx = 0
         while start_idx < len(text):
@@ -120,13 +121,15 @@ class ColSentenceModel(nn.Module):
             sentences, idx_map = self.extract_sentences(batch)
             tokens = self.tokenizer(sentences, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
             embeddings = self.bert_model(**tokens).pooler_output
-            final_embeddings = torch.nn.functional.normalize(self.token_mapper(embeddings),dim=1)
+            embeddings = torch.nn.functional.normalize(self.token_mapper(embeddings),dim=1)
+
             if query:
-                embedded_batch = torch.nn.utils.rnn.pad_sequence([final_embeddings[start:end] for start, end in idx_map], batch_first=True).transpose(1, 2)
+                embedded_batch = torch.nn.utils.rnn.pad_sequence([embeddings[start:end] for start, end in idx_map], batch_first=True).transpose(1, 2)
             else:
-                embedded_batch = torch.nn.utils.rnn.pad_sequence([final_embeddings[start:end] for start, end in idx_map], batch_first=True)
+                embedded_batch = torch.nn.utils.rnn.pad_sequence([embeddings[start:end] for start, end in idx_map], batch_first=True)
             embedding_obj.add(embedded_batch)
             torch.cuda.empty_cache()
+        embedding_obj.save()
         return embedding_obj
 
     def extract_sentences(self, texts):

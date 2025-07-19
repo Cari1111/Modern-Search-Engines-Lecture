@@ -8,7 +8,7 @@ import math
 import itertools
 
 class Ranking_Benchmark:
-    def __init__(self, dataset_name, dir_name, prefix="", result_path="datasets/preprocessed/", max_samples=100):
+    def __init__(self, dataset_name, dir_name, prefix="", result_path="datasets/preprocessed/", max_samples=5000):
         dataset = load_dataset(dataset_name, dir_name)
         dataset = dataset["test"][:max_samples]
         self.bm25 = BM25()
@@ -44,7 +44,7 @@ class Ranking_Benchmark:
         relevance_assignments = torch.Tensor(list(itertools.chain.from_iterable([ex["is_selected"] for ex in dataset["passages"]])))
         query_ids = torch.Tensor(list(itertools.chain.from_iterable([[dataset["query_id"][idx]]*len(dataset["passages"][idx]["passage_text"]) for idx in range(len(dataset["query_id"]))])))
 
-        passage_ids = torch.range(0, len(passages)-1) # torch range is weird
+        passage_ids = torch.arange(0, len(passages))
         relevance_assignments = torch.stack((query_ids, passage_ids, relevance_assignments), dim=1)
 
         return passages, relevance_assignments
@@ -90,5 +90,6 @@ model = ColSentenceModel()
 model_path = "./clip/ColSent/bert-mini/b64_lr1E-06_microsoft/ms_marcov2.1/"
 model_name = "model.safetensors"
 model.load(model_path+model_name)
+model.data_path=model_path+"embed_data/"
 benchmark = Ranking_Benchmark("microsoft/ms_marco", "v2.1", "[rank]", model_path)
 print(benchmark.benchmark(model))
