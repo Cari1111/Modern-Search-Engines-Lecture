@@ -7,7 +7,7 @@ import json
 import math
 import itertools
 
-class ranking_benchmark:
+class Ranking_Benchmark:
     def __init__(self, dataset_name, dir_name, prefix="", result_path="datasets/preprocessed/", max_samples=100):
         dataset = load_dataset(dataset_name, dir_name)
         dataset = dataset["test"][:max_samples]
@@ -51,10 +51,10 @@ class ranking_benchmark:
     
     def get_per_query_rankings(self):
         relevance_rankings = {}
-        relevant_ranks = []
+        #relevant_ranks = []
         for query in self.queries.keys(): # slow
-            relevance_assignments = np.append(np.expand_dims(self.bm25.calculate_rels(query), axis=1), np.expand_dims(np.arange(len(self.documents)), axis=1), axis=1)
-            sorted_relevance_idx = np.argsort(relevance_assignments[:,0])
+            relevance_assignments = self.bm25.calculate_rels(query)
+            sorted_relevance_idx = np.flip(np.argsort(relevance_assignments))
             #sorted_relevance_assignments = relevance_assignments[sorted_relevance_idx]
             relevance_rankings[query] = (relevance_assignments, sorted_relevance_idx)
             #for relevant, q_idx, doc_idx in self.relevance_map:  # slow
@@ -65,31 +65,30 @@ class ranking_benchmark:
         return relevance_rankings, avg_rel_rank
     
     def dcg(self, query, ranking):
-        discount_factors = np.vectorize(lambda x: 1/math.log2(x+1))(np.arange(len(ranking)))
-        return np.sum(self.relevance_map[query][0][ranking]*discount_factors)
+        discount_factors = np.vectorize(lambda x: 1/math.log2(x+1))(np.arange(1, len(ranking)+1))
+        return np.sum(self.per_query_rankings[query][0][ranking]*discount_factors)
 
     def ndcg(self, query, ranking):
         rank_dcg = self.dcg(query, ranking)
-        ideal_dcg = self.dcg(query, self.relevance_map[query][1][:len(ranking)])
+        ideal_dcg = self.dcg(query, self.per_query_rankings[query][1][:len(ranking)])
         return rank_dcg/ideal_dcg
     
     def benchmark(self, model): # Needs some kind of batching. cant hold a significant amount of embeddings in memory.
-        doc_embeddings = model.embed(self.documents) # assumes no shuffelling happens here
-        q_embedding = model.embed(self.queries.keys())
+        doc_embeddings = model.embed(self.documents, query=False) # assumes no shuffelling happens here
+        q_embedding = model.embed(list(self.queries.keys()))
         ndcg_scores = []
         for query_idx in range(len(self.queries.keys())):
-            doc_relevancies = model.resolve(q_embedding[query_idx], doc_embeddings)
+            doc_relevancies = model.resolve(q_embedding[query_idx], doc_embeddings).flatten().detach().cpu().numpy() # we know flattening is ok, because this is of shape (queries, docs) where queries is 1
             doc_sort_idx = np.argsort(doc_relevancies)
-            local_ndcg = self.ndcg(query=self.queries.keys()[query_idx], ranking=doc_sort_idx)
+            local_ndcg = self.ndcg(query=list(self.queries.keys())[query_idx], ranking=doc_sort_idx)
             ndcg_scores.append(local_ndcg)
         avg_ndcg = sum(ndcg_scores)/len(ndcg_scores)
         return avg_ndcg
-
 
 
 model = ColSentenceModel()
 model_path = "./clip/ColSent/bert-mini/b64_lr1E-06_microsoft/ms_marcov2.1/"
 model_name = "model.safetensors"
 model.load(model_path+model_name)
-benchmark = ranking_benchmark("microsoft/ms_marco", "v2.1", "[rank]", model_path)
-benchmark.benchmark(model)
+benchmark = Ranking_Benchmark("microsoft/ms_marco", "v2.1", "[rank]", model_path)
+print(benchmark.benchmark(model))

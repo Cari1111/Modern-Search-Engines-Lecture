@@ -9,6 +9,7 @@ import math
 import numpy as np
 import re
 from embedding import Embedding
+from functools import partial
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -83,27 +84,32 @@ class ColSentenceModel(nn.Module):
     # Intended tensor shapes: 
     # doc_tokens: (batch_size, doc tokens (num sentences) -> may have padding, embedding size)
     # query_tokens: (batch_size, embedding size, query tokens (num sentences) -> may have padding)
-    # TODO: rewrite to work with Embedding Class
-    def max_sim(self, doc_tokens, query_tokens, sentence_wise, full_mat=True):
-        if full_mat:
-            desired_query_shape = (query_tokens.shape[0], doc_tokens.shape[0], query_tokens.shape[1], query_tokens.shape[2])
-            desired_doc_shape = (query_tokens.shape[0], doc_tokens.shape[0], doc_tokens.shape[1], doc_tokens.shape[2])
-            query_tokens = query_tokens.unsqueeze(1).expand(desired_query_shape).flatten(0,1)
-            doc_tokens = doc_tokens.unsqueeze(0).expand(desired_doc_shape).flatten(0,1)
+    def max_sim(self, doc_tokens, query_tokens, sentence_wise):
+        def max_sim_operation(batch_doc_tokens, batch_query_tokens, sentence_wise):
+            desired_query_shape = (batch_query_tokens.shape[0], batch_doc_tokens.shape[0], batch_query_tokens.shape[1], batch_query_tokens.shape[2])
+            desired_doc_shape = (batch_query_tokens.shape[0], batch_doc_tokens.shape[0], batch_doc_tokens.shape[1], batch_doc_tokens.shape[2])
+            batch_query_tokens = batch_query_tokens.unsqueeze(1).expand(desired_query_shape).flatten(0,1)
+            batch_doc_tokens = batch_doc_tokens.unsqueeze(0).expand(desired_doc_shape).flatten(0,1)
             if sentence_wise:
-                return torch.sum(torch.bmm(doc_tokens, query_tokens), dim=2).reshape((desired_query_shape[0], desired_query_shape[1], desired_doc_shape[2]))
+                return torch.sum(torch.bmm(batch_doc_tokens, batch_query_tokens), dim=2).reshape((desired_query_shape[0], desired_query_shape[1], desired_doc_shape[2]))
             else:
-                return torch.sum(torch.max(torch.bmm(doc_tokens, query_tokens), dim=1, keepdim=True)[0], dim=2).reshape((desired_query_shape[0], desired_query_shape[1])) # shape after bmm (batch size, #doc_tokens, #query_tokens)
-        else:
-            if sentence_wise:
-                return torch.sum(torch.bmm(doc_tokens, query_tokens), dim=2)
-            else:
-                return torch.sum(torch.max(torch.bmm(doc_tokens, query_tokens), dim=1, keepdim=True)[0], dim=2) # shape after bmm (batch size, #doc_tokens, #query_tokens)
+                return torch.sum(torch.max(torch.bmm(batch_doc_tokens, batch_query_tokens), dim=1, keepdim=True)[0], dim=2).reshape((desired_query_shape[0], desired_query_shape[1])) # shape after bmm (batch size, #doc_tokens, #query_tokens)
+        
+        results = []
+        if isinstance(query_tokens, Embedding):
+            for query_token_batch_idx in range(len(query_tokens.batch_file_paths)):
+                query_token_batch = query_tokens.get_batch_tensor(query_token_batch_idx)
+                map_func = partial(max_sim_operation, batch_query_tokens=query_token_batch, sentence_wise=sentence_wise)
+                results.append(doc_tokens.map_over(map_func, result_axis=1).assemble())
+            return torch.cat(results, dim=0)
+        else: # assume query token is a tensor here
+            map_func = partial(max_sim_operation, batch_query_tokens=query_tokens.unsqueeze(dim=0), sentence_wise=sentence_wise)
+            return doc_tokens.map_over(map_func, result_axis=1).assemble()
 
     def resolve(self, query_embeddings, document_embeddings):
         return self.max_sim(document_embeddings, query_embeddings, sentence_wise=False)
 
-    def embed(self, text, query=True, batch_size=100): # sentences structure: (batch x text) embeddings
+    def embed(self, text, query=True, batch_size=500): # sentences structure: (batch x text) embeddings
         embedding_obj = Embedding(self.data_path)
         start_idx = 0
         while start_idx < len(text):
@@ -120,6 +126,7 @@ class ColSentenceModel(nn.Module):
             else:
                 embedded_batch = torch.nn.utils.rnn.pad_sequence([final_embeddings[start:end] for start, end in idx_map], batch_first=True)
             embedding_obj.add(embedded_batch)
+            torch.cuda.empty_cache()
         return embedding_obj
 
     def extract_sentences(self, texts):
