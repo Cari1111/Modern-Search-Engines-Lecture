@@ -9,6 +9,8 @@ import math
 import numpy as np
 import re
 from sentence_transformers import SentenceTransformer
+import torchtune
+from collections import OrderedDict
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -66,11 +68,34 @@ class SiglipStyleModel(nn.Module):
 
 
 class ColSentenceModel(nn.Module):
-    def __init__(self, model_name="prajjwal1/bert-mini", embed_size=128, loss_type="siglip", use_max_sim=True):
+    def __init__(self, model_name="prajjwal1/bert-mini", embed_size=128, loss_type="siglip", use_max_sim=True, sentence_attention_layers=0):
         super().__init__()
         self.model_name = model_name
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.bert_model = AutoModel.from_pretrained(model_name, trust_remote_code=True)
+
+        if sentence_attention_layers > 0:
+            idx = 0
+            modules = []
+            while idx < sentence_attention_layers:
+                feed_forward = torch.nn.Sequential(
+                    torch.nn.Linear(self.bert_model.pooler.dense.out_features, self.bert_model.pooler.dense.out_features*2),
+                    torch.nn.GELU(),
+                    torch.nn.Dropout(),
+                    torch.nn.LayerNorm(),
+                    torch.nn.Linear(self.bert_model.pooler.dense.out_features*2, self.bert_model.pooler.dense.out_features),
+                    torch.nn.GELU(),
+                    torch.nn.Dropout(),
+                    torch.nn.LayerNorm()
+                )
+                attention = torch.nn.MultiheadAttention(embed_dim=self.bert_model.pooler.dense.out_features, num_heads=4)
+                attn_layer = torchtune.modules.TransformerSelfAttentionLayer(attn=attention, mlp=feed_forward)
+                modules.append((f"attn_layer_{idx}", attn_layer))
+            modules_ord_dict = OrderedDict(modules)
+            self.cross_sentence_attn_layers = torch.nn.Sequential(
+                modules_ord_dict
+            )
+
         self.token_mapper = nn.Linear(self.bert_model.pooler.dense.out_features, embed_size)
         self.loss_type = loss_type
         nltk.download('punkt_tab')  # install the sentence level tokenizer
