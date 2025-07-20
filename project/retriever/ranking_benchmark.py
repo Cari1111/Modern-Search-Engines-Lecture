@@ -82,8 +82,8 @@ class ranking_benchmark:
         ndcg_scores = []
         for query_idx in range(len(self.queries.keys())):
             doc_relevancies = model.resolve(q_embedding[query_idx], doc_embeddings)
-            doc_sort_idx = np.argsort(doc_relevancies)
-            local_ndcg = self.ndcg(query=self.queries.keys()[query_idx], ranking=doc_sort_idx)
+            doc_sort_idx = np.argsort(doc_relevancies.detach().cpu().numpy())
+            local_ndcg = self.ndcg(query=list(self.queries.keys())[query_idx], ranking=doc_sort_idx)
             ndcg_scores.append(local_ndcg)
         avg_ndcg = sum(ndcg_scores)/len(ndcg_scores)
         return avg_ndcg
@@ -93,8 +93,8 @@ class ranking_benchmark:
 model = ColSentenceModel()
 # model_path = "./clip/ColSent/bert-mini/b64_lr1E-06_microsoft/ms_marcov2.1/"
 # model_name = "model.safetensors"
-model_path = "project/retriever/model_uploads/"
-model_name = "bmini_ColSent_b128_marco_v1.safetensors"
+model_path = "clip/ColSent/bert-mini/b64_lr1E-06_microsoft/ms_marcov2.1/"
+model_name = "model.safetensors"
 model.load(model_path+model_name)
 benchmark = ranking_benchmark("microsoft/ms_marco", "v2.1", "[rank]", model_path)
 benchmark.benchmark(model)

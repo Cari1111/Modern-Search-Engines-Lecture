@@ -112,7 +112,9 @@ class ColSentenceModel(nn.Module):
         doc_tokens = doc_tokens.unsqueeze(0).expand(desired_doc_shape).flatten(0, 1)
         return query_tokens, doc_tokens, desired_query_shape, desired_doc_shape
 
-    def resolve(self, query_embeddings, document_embeddings, max_sim=True):
+    def resolve(self, query_embeddings, document_embeddings, max_sim=None):
+        if max_sim is None:
+            max_sim = self.use_max_sim
         if max_sim:
             return self.max_sim(document_embeddings, query_embeddings)
         else:
