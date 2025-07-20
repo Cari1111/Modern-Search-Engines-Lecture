@@ -120,7 +120,7 @@ class ColSentenceModel(nn.Module):
         else:
             return self.avg_sim(document_embeddings, query_embeddings)
 
-    def embed(self, text, batch_size=100, detach_results = False):  # sentences structure: (batch x sentences) embeddings
+    def embed(self, text, batch_size=100, detach_results = True):  # sentences structure: (batch x sentences) embeddings
         if isinstance(text, str):
             text = [text] # wrap, because we expect something batch
         sentences, idx_map = self.extract_sentences(text)
@@ -297,3 +297,11 @@ class MentorModel(nn.Module):
 
     def resolve(self, query_embeddings, document_embeddings):
         return query_embeddings @ document_embeddings.t()
+    
+    def preprocess(self, documents):
+        d_embed = self.embed(documents, query=False)
+        self.document_embeddings = d_embed.detach().cpu()
+
+    def calculate_rels(self, query):
+        q_embed = self.embed(query, query=True).detach().cpu()
+        return self.resolve(q_embed, self.document_embeddings)

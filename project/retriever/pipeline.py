@@ -40,14 +40,13 @@ print(test_data)
 
 os.environ["WANDB_PROJECT"] = "MSE"
 os.environ["WANDB_LOG_MODEL"] = "false"
-wandb.init(entity="mse-jan-simon", name=model_path)
+#wandb.init(entity="mse-jan-simon", name=model_path)
 
 training_args = TrainingArguments(
     output_dir="models/" + model_path,
     per_device_train_batch_size=batch_size,
     num_train_epochs=epochs,
     learning_rate=lr,
-    save_steps=1000,
     save_total_limit=1,
     remove_unused_columns=False,
     bf16=True,
@@ -58,8 +57,12 @@ training_args = TrainingArguments(
     eval_on_start=True,
     per_device_eval_batch_size=eval_batch,
     run_name=model_path,
-    report_to='wandb',
-    # max_steps=1000,
+    report_to='none',
+    save_strategy="steps",
+    save_steps=400,
+    load_best_model_at_end=True,
+    metric_for_best_model=f"eval_{data_paths[-1][0]}{data_paths[-1][1]}_best_score",
+    max_steps=4000,
 )
 
 trainer = Trainer(
@@ -78,3 +81,4 @@ trainer.add_callback(NotebookProgressCallbackNoTable)
 trainer.train()
 # try: trainer.train(resume_from_checkpoint=True)
 # except: trainer.train(resume_from_checkpoint=False)
+trainer.save_model(output_dir=model_path)
